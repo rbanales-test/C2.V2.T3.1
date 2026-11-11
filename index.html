@@ -15,6 +15,11 @@
             --border-color: #E2E2E2;
             --success-green: #00885A;
             --warning-yellow: #FFC107;
+            --danger-red: #D32F2F;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
         }
 
         body {
@@ -37,19 +42,43 @@
             width: 100%;
             box-shadow: 0 2px 4px rgba(0,0,0,0.08);
             border: 1px solid var(--border-color);
-            box-sizing: border-box;
         }
 
         #app-screen { display: none; }
 
-        h1, h2 { margin-top: 0; color: var(--text-main); }
+        h1, h2, h3 { margin-top: 0; color: var(--text-main); }
         p { color: var(--text-secondary); }
+
+        /* Volume Warning Box */
+        .volume-warning {
+            background-color: #FFEBEE;
+            border-left: 4px solid var(--danger-red);
+            padding: 14px 18px;
+            border-radius: 0 4px 4px 0;
+            margin-bottom: 20px;
+        }
+
+        .volume-warning h3 {
+            color: var(--danger-red);
+            font-size: 15px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .volume-warning p {
+            color: #B71C1C;
+            font-size: 13.5px;
+            margin: 0;
+            line-height: 1.4;
+        }
 
         .tutorial-content {
             background-color: #EBF3FF;
             padding: 20px;
             border-left: 4px solid var(--coursera-blue);
-            margin-bottom: 30px;
+            margin-bottom: 25px;
         }
 
         canvas {
@@ -58,6 +87,7 @@
             margin: 20px 0;
             width: 100%;
             height: 200px;
+            display: block;
         }
 
         button {
@@ -97,6 +127,7 @@
             border-radius: 4px;
             background-color: #FAFAFA;
             transition: opacity 0.3s;
+            min-width: 0;
         }
 
         .control-block.disabled {
@@ -147,14 +178,21 @@
     <!-- Tutorial Screen -->
     <div id="tutorial-screen" class="screen" role="dialog" aria-labelledby="tutorial-title">
         <h1 id="tutorial-title">Noise Sculpting Simulator</h1>
+
+        <!-- Universal Volume Warning -->
+        <div class="volume-warning" role="alert">
+            <h3>⚠️ Volume Warning / Cuidado con el Volumen</h3>
+            <p>This simulator produces broadband white noise across the entire audible spectrum. Please adjust your headphones or audio output to a moderate level before starting.</p>
+        </div>
+
         <div class="tutorial-content">
             <p><strong>Objective:</strong> Transform a random, unpitched signal (White Noise) into useful musical elements using envelopes and filters.</p>
-            <p><strong>Instructions:</strong></p>
+            <p><strong>Instructions & Accessibility:</strong></p>
             <ol>
-                <li>Click <strong>Start Simulator</strong>. The audio engine will generate raw White Noise.</li>
+                <li>Click <strong>Start Simulator</strong> to initialize the engine (integrated safety limiter active).</li>
+                <li>Press and hold <kbd>Spacebar</kbd> or the on-screen button to trigger and hold the noise.</li>
                 <li>Complete the <strong>5 sequential missions</strong> of ascending complexity.</li>
-                <li>The first 4 missions are guided to teach you the modules.</li>
-                <li>The final mission is an unguided challenge: you must find the right parameters yourself to unlock Free Exploration mode.</li>
+                <li>The first 4 missions are guided to teach you the modules; the final mission is an unguided challenge.</li>
             </ol>
         </div>
         <button id="btn-start" tabindex="0">Start Simulator</button>
@@ -167,7 +205,7 @@
         
         <canvas id="spectrum-canvas" width="800" height="200" aria-label="Frequency Spectrum Analyzer" role="img"></canvas>
         
-        <button id="btn-play" aria-pressed="false" tabindex="0">PRESS AND HOLD TO TRIGGER NOISE</button>
+        <button id="btn-play" aria-pressed="false" tabindex="0">PRESS AND HOLD TO TRIGGER NOISE (Spacebar)</button>
 
         <div class="controls-grid">
             <!-- Envelope Controls -->
@@ -175,13 +213,13 @@
                 <div class="block-title">Amplifier Envelope</div>
                 
                 <label for="env-attack">Attack: <span id="val-atk">0.1</span>s</label>
-                <input type="range" id="env-attack" min="0" max="3" step="0.1" value="0.1">
+                <input type="range" id="env-attack" min="0" max="3" step="0.1" value="0.1" tabindex="0">
                 
                 <label for="env-decay">Decay: <span id="val-dec">0.5</span>s</label>
-                <input type="range" id="env-decay" min="0.05" max="3" step="0.05" value="0.5">
+                <input type="range" id="env-decay" min="0.05" max="3" step="0.05" value="0.5" tabindex="0">
                 
                 <label for="env-release">Release: <span id="val-rel">0.1</span>s</label>
-                <input type="range" id="env-release" min="0" max="3" step="0.1" value="0.1">
+                <input type="range" id="env-release" min="0" max="3" step="0.1" value="0.1" tabindex="0">
                 
                 <small style="color:var(--text-secondary);">Shapes the volume over time.</small>
             </div>
@@ -191,8 +229,7 @@
                 <div class="block-title">Low-Pass Filter (Sculptor)</div>
                 
                 <label for="flt-cutoff">Cutoff Frequency: <span id="val-cut">20000</span> Hz</label>
-                <!-- Logarithmic scale approach: min 0, max 100 -->
-                <input type="range" id="flt-cutoff" min="0" max="100" value="100">
+                <input type="range" id="flt-cutoff" min="0" max="100" value="100" tabindex="0">
                 
                 <small style="color:var(--text-secondary);">Reduces high frequencies to darken the tone.</small>
             </div>
@@ -228,7 +265,7 @@
         const mTitle = document.getElementById('mission-title');
         const mStatus = document.getElementById('mission-status');
 
-        let audioCtx, noiseSource, filterNode, gainNode, analyser;
+        let audioCtx, noiseSource, filterNode, gainNode, safetyLimiter, analyser;
         let dataArray, bufferLength;
         let isPressed = false;
         let currentMission = 1;
@@ -239,6 +276,8 @@
             tutorialScreen.setAttribute('aria-hidden', 'true');
             appScreen.style.display = 'block';
             appScreen.removeAttribute('aria-hidden');
+            initAudio();
+            btnPlay.focus();
         });
 
         function getLogFrequency(value) {
@@ -255,7 +294,7 @@
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const output = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) {
-                output[i] = Math.random() * 2 - 1;
+                output[i] = (Math.random() * 2 - 1) * 0.7; // Headroom protection
             }
             return buffer;
         }
@@ -264,6 +303,14 @@
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 
+                // Hardware Safety Limiter
+                safetyLimiter = audioCtx.createDynamicsCompressor();
+                safetyLimiter.threshold.value = -8;
+                safetyLimiter.knee.value = 0;
+                safetyLimiter.ratio.value = 20;
+                safetyLimiter.attack.value = 0.001;
+                safetyLimiter.release.value = 0.1;
+
                 noiseSource = audioCtx.createBufferSource();
                 noiseSource.buffer = createWhiteNoiseBuffer();
                 noiseSource.loop = true;
@@ -280,9 +327,11 @@
                 bufferLength = analyser.frequencyBinCount;
                 dataArray = new Uint8Array(bufferLength);
                 
+                // Audio Chain: Noise -> Filter -> Gain -> Limiter -> Analyser -> Destination
                 noiseSource.connect(filterNode);
                 filterNode.connect(gainNode);
-                gainNode.connect(analyser);
+                gainNode.connect(safetyLimiter);
+                safetyLimiter.connect(analyser);
                 analyser.connect(audioCtx.destination);
                 
                 noiseSource.start();
@@ -293,6 +342,7 @@
         function triggerAttack() {
             if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
             initAudio();
+            if (isPressed) return;
             isPressed = true;
             btnPlay.setAttribute('aria-pressed', 'true');
             btnPlay.style.backgroundColor = '#0056D2';
@@ -304,17 +354,17 @@
             gainNode.gain.cancelScheduledValues(now);
             gainNode.gain.setValueAtTime(gainNode.gain.value, now);
             
-            gainNode.gain.linearRampToValueAtTime(1, now + atk);
+            gainNode.gain.linearRampToValueAtTime(0.85, now + atk);
             
-            // Sustain = 1 for pads (Attack > 0.5), Sustain = 0 for percussive
-            const sustainLevel = (atk > 0.5) ? 1 : 0;
+            // Sustain = 0.85 for pads (Attack > 0.5), Sustain = 0 for percussive hits
+            const sustainLevel = (atk > 0.5) ? 0.85 : 0;
             gainNode.gain.linearRampToValueAtTime(sustainLevel, now + atk + dec);
             
             checkMissions();
         }
 
         function triggerRelease() {
-            if (!audioCtx) return;
+            if (!audioCtx || !isPressed) return;
             isPressed = false;
             btnPlay.setAttribute('aria-pressed', 'false');
             btnPlay.style.backgroundColor = '#000';
@@ -354,8 +404,8 @@
             const freq = getLogFrequency(inpCut.value);
             valCut.textContent = Math.round(freq);
             
-            if(filterNode) {
-                filterNode.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+            if (filterNode && audioCtx) {
+                filterNode.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.04);
             }
             checkMissions();
         }
@@ -387,7 +437,7 @@
             else if (currentMission === 4 && freq < 2000 && isPressed) {
                 currentMission = 5;
                 mTitle.textContent = "Mission 5/5: The Soundscape Challenge (Unguided)";
-                mStatus.innerHTML = "We want a howling distant wind. The tone is dark enough, but wind swells and fades slowly. <br><strong>Challenge:</strong> Figure out how to change the Envelope (Attack & Release) to make it evolve slowly, while keeping the Cutoff dark (< 1000 Hz).";
+                mStatus.innerHTML = "We want a howling distant wind. The tone is dark enough, but wind swells and fades slowly. <br><strong>Challenge:</strong> Change the Envelope (Attack & Release > 1.5s) to make it evolve slowly, while keeping the Cutoff dark (< 1000 Hz).";
             }
             else if (currentMission === 5 && atk > 1.5 && rel > 1.5 && freq < 1000 && isPressed) {
                 currentMission = 6;
@@ -401,20 +451,37 @@
             }
         }
 
-        // Listeners
+        // Global Keyboard Handler (WCAG: Space/Enter holds note, prevents scrolling)
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.key === ' ') {
+                e.preventDefault();
+                if (appScreen.style.display === 'block' && !e.repeat && !isPressed) {
+                    triggerAttack();
+                }
+            } else if (e.key === 'Enter') {
+                if (appScreen.style.display === 'block' && e.target !== btnStart && !e.repeat) {
+                    if (e.target.tagName !== 'BUTTON') {
+                        e.preventDefault();
+                        if (!isPressed) triggerAttack();
+                    }
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space' || e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                if (isPressed) triggerRelease();
+            }
+        });
+
+        // Mouse & Touch Listeners
         btnPlay.addEventListener('mousedown', triggerAttack);
         btnPlay.addEventListener('mouseup', triggerRelease);
-        btnPlay.addEventListener('mouseleave', () => { if(isPressed) triggerRelease(); });
+        btnPlay.addEventListener('mouseleave', () => { if (isPressed) triggerRelease(); });
         
         btnPlay.addEventListener('touchstart', (e) => { e.preventDefault(); triggerAttack(); });
         btnPlay.addEventListener('touchend', (e) => { e.preventDefault(); triggerRelease(); });
-        
-        btnPlay.addEventListener('keydown', (e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && !isPressed) triggerAttack();
-        });
-        btnPlay.addEventListener('keyup', (e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && isPressed) triggerRelease();
-        });
 
         inpAtk.addEventListener('input', updateValues);
         inpDec.addEventListener('input', updateValues);
